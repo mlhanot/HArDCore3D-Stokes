@@ -34,11 +34,6 @@ ADD_EXECUTABLE(ddr-stokes DDR-stokes/ddr-stokes.cpp)
 TARGET_LINK_LIBRARIES(ddr-stokes mesh quadrature ddrcore plot ${EXTERNAL_LIBRARIES})
 TARGET_INCLUDE_DIRECTORIES(ddr-stokes PUBLIC ${EXTERNAL_INCLUDES})
 
-# DDR Stox
-ADD_EXECUTABLE(ddr-stox DDR-stox/stox.cpp)
-TARGET_LINK_LIBRARIES(ddr-stox mesh quadrature ddrcore plot ${EXTERNAL_LIBRARIES})
-TARGET_INCLUDE_DIRECTORIES(ddr-stox PUBLIC ${EXTERNAL_INCLUDES})
-
 # VEM Stokes
 ADD_EXECUTABLE(vem-stokes VEM-stokes/vem-stokes.cpp)
 TARGET_LINK_LIBRARIES(vem-stokes mesh quadrature vemcore plot ${EXTERNAL_LIBRARIES})
