@@ -1,0 +1,6 @@
+PETsc works with MPI which work with several program instances.
+The solver part appears late in the code, hence the choice for two separate main.
+One is dedicated to the solver, it must be controled by the main process.
+To avoid redundancy they must share many source lines.
+The chosen solution heavily involve the preprocessor.
+

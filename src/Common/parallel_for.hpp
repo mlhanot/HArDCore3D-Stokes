@@ -17,8 +17,13 @@ namespace HArDCore3D
                                   std::function<void(size_t start, size_t end)> functor,
                                   bool use_threads = true)
   {
-    unsigned nb_threads_hint = std::thread::hardware_concurrency();
-    unsigned nb_threads = nb_threads_hint == 0 ? 8 : (nb_threads_hint);
+    // Provide a way to set the number of threads when concurrency give wrong results (e.g. hyperthreading or workload manager)
+    #ifdef NB_THREADS
+      unsigned nb_threads = NB_THREADS;
+    #else
+      unsigned nb_threads_hint = std::thread::hardware_concurrency();
+      unsigned nb_threads = nb_threads_hint == 0 ? 8 : (nb_threads_hint);
+    #endif // def NB_THREADS
 
     unsigned batch_size = nb_elements / nb_threads;
     unsigned batch_remainder = nb_elements % nb_threads;
@@ -65,8 +70,12 @@ namespace HArDCore3D
   
     if (use_threads) {
       // Select the number of threads
+    #ifdef NB_THREADS
+      unsigned nb_threads = NB_THREADS;
+    #else
       unsigned nb_threads_hint = std::thread::hardware_concurrency();
       unsigned nb_threads = nb_threads_hint == 0 ? 8 : (nb_threads_hint);
+    #endif // def NB_THREADS
 
       // Compute the batch size and the remainder
       unsigned batch_size = nb_elements / nb_threads;
@@ -137,8 +146,12 @@ namespace HArDCore3D
   
     if (use_threads) {
       // Select the number of threads
+    #ifdef NB_THREADS
+      unsigned nb_threads = NB_THREADS;
+    #else
       unsigned nb_threads_hint = std::thread::hardware_concurrency();
       unsigned nb_threads = nb_threads_hint == 0 ? 8 : (nb_threads_hint);
+    #endif // def NB_THREADS
 
       // Compute the batch size and the remainder
       unsigned batch_size = nb_elements / nb_threads;

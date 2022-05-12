@@ -252,7 +252,7 @@ Eigen::MatrixXd HArDCore3D::GramMatrixDiv(const Face & F, const RolyComplBasisFa
   }   // for i
   
   return gm / F.diam();
-};
+}
 
 
 

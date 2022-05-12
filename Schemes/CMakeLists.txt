@@ -3,7 +3,6 @@ ADD_LIBRARY(TestCase OBJECT TestCase/TestCase.cpp)
 ADD_LIBRARY(BoundaryConditions OBJECT BoundaryConditions/BoundaryConditions.cpp)
 ADD_LIBRARY(hho-general OBJECT HHO-general/HHO3D.cpp)
 ADD_LIBRARY(DirectedGraph OBJECT MeshCoarsen/DirectedGraph.cpp)
-ADD_LIBRARY(MHDTests HHO-MHD/MHDTests.cpp)
 
 # Mesh Coarsen
 ADD_EXECUTABLE(mesh-coarsen $<TARGET_OBJECTS:DirectedGraph> MeshCoarsen/MeshCoarsen.cpp)
@@ -35,15 +34,31 @@ ADD_EXECUTABLE(ddr-stokes DDR-stokes/ddr-stokes.cpp)
 TARGET_LINK_LIBRARIES(ddr-stokes mesh quadrature ddrcore plot ${EXTERNAL_LIBRARIES})
 TARGET_INCLUDE_DIRECTORIES(ddr-stokes PUBLIC ${EXTERNAL_INCLUDES})
 
+# DDR Stox
+ADD_EXECUTABLE(ddr-stox DDR-stox/stox.cpp)
+TARGET_LINK_LIBRARIES(ddr-stox mesh quadrature ddrcore plot ${EXTERNAL_LIBRARIES})
+TARGET_INCLUDE_DIRECTORIES(ddr-stox PUBLIC ${EXTERNAL_INCLUDES})
+
 # VEM Stokes
 ADD_EXECUTABLE(vem-stokes VEM-stokes/vem-stokes.cpp)
 TARGET_LINK_LIBRARIES(vem-stokes mesh quadrature vemcore plot ${EXTERNAL_LIBRARIES})
 TARGET_INCLUDE_DIRECTORIES(vem-stokes PUBLIC ${EXTERNAL_INCLUDES})
 
-# HHO MHD
-ADD_EXECUTABLE(hho-mhd $<TARGET_OBJECTS:MHDTests> $<TARGET_OBJECTS:BoundaryConditions> HHO-MHD/HHO_MHD.cpp)
-TARGET_LINK_LIBRARIES(hho-mhd quadrature hybridcore plot mesh ${EXTERNAL_LIBRARIES})
-TARGET_INCLUDE_DIRECTORIES(hho-mhd PUBLIC ${EXTERNAL_INCLUDES})
+# Stokes-tests
+INCLUDE_DIRECTORIES(Stokes-tests)
+ADD_SUBDIRECTORY(Stokes-tests)
 
-
+# Stokes
+ADD_DEFINITIONS(-DROOT_DIR=${CMAKE_SOURCE_DIR})
+ADD_EXECUTABLE(stokes Stokes/stokes.cpp)
+if (WITH_PETSC_MPI)
+  TARGET_LINK_LIBRARIES(stokes mesh quadrature stokescore plot savestates solver ${EXTERNAL_LIBRARIES_MPI})
+  # Specify rpath
+  TARGET_LINK_DIRECTORIES(stokes PUBLIC ${PETSC_LIBRARY_DIRS})
+  TARGET_INCLUDE_DIRECTORIES(stokes PUBLIC ${EXTERNAL_INCLUDES_MPI})
+  ADD_DEPENDENCIES(stokes petsc_altmain)
+ELSE()
+  TARGET_LINK_LIBRARIES(stokes mesh quadrature stokescore plot savestates ${EXTERNAL_LIBRARIES})
+  TARGET_INCLUDE_DIRECTORIES(stokes PUBLIC ${EXTERNAL_INCLUDES})
+ENDIF()
 

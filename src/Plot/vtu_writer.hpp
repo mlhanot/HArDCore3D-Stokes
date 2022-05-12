@@ -71,7 +71,7 @@ public:
 	bool write_footer(FILE* pFile);
 
 	/// overloaded writer for the mesh alone
-//	bool write_to_vtu(std::string file_name); 
+	bool write_to_vtu(std::string file_name); 
 
 private:
   const Mesh* _mesh;

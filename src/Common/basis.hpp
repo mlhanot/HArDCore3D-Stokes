@@ -375,8 +375,8 @@ namespace HArDCore3D
   public:
     typedef typename BasisType::FunctionValue FunctionValue;
     typedef typename BasisType::GradientValue GradientValue;
-    typedef VectorRd CurlValue;
-    typedef double DivergenceValue;
+    typedef typename BasisType::CurlValue CurlValue;
+    typedef typename BasisType::DivergenceValue DivergenceValue;
 
     typedef typename BasisType::GeometricSupport GeometricSupport;
 
@@ -399,6 +399,10 @@ namespace HArDCore3D
     {
       assert((size_t)matrix.cols() == basis.dimension() || "Inconsistent family initialization");
     }
+    /// Default constructor for empty family
+    // BasisType must be default constructible
+    // Useful for sumfamily
+    Family() : m_basis(BasisType()), m_matrix(Eigen::MatrixXd()) {} 
 
     /// Dimension of the family. This is actually the number of functions in the family, not necessarily linearly independent
     inline size_t dimension() const
@@ -688,6 +692,90 @@ namespace HArDCore3D
     ScalarFamilyType m_scalar_family;
   };
 
+  //----------------------TENSORIZED VECTOR-----------------------------------------------------
+
+  /// Matrix family obtained by tensorization of a vector family
+  /** The tensorization is done the following way: if \f$(f_1,...,f_r)\f$ is the family of vector functions,
+   the tensorized family of rank N is given by:
+  
+     \f$\left(\begin{array}{c}f_1\\0\\\vdots\\0\end{array}\right)\f$;
+     \f$\left(\begin{array}{c}f_2\\0\\\vdots\\0\end{array}\right)\f$;...;
+     \f$\left(\begin{array}{c}f_r\\0\\\vdots\\0\end{array}\right)\f$;
+     \f$\left(\begin{array}{c}0\\f_1\\0\\\vdots\\0\end{array}\right)\f$;
+     \f$\left(\begin{array}{c}0\\f_2\\0\\\vdots\\0\end{array}\right)\f$;...;
+     \f$\left(\begin{array}{c}0\\f_r\\0\\\vdots\\0\end{array}\right)\f$;...;
+     \f$\left(\begin{array}{c}0\\\vdots\\0\\f_1\end{array}\right)\f$;...;
+     \f$\left(\begin{array}{c}0\\\vdots\\0\\f_r\end{array}\right)\f$
+  */
+  template <typename VectorFamilyType, size_t N>
+  class TensorizedMatrixFamily
+  {
+  public:
+    typedef typename Eigen::Matrix<double, N, dimspace> FunctionValue;
+    typedef typename Eigen::Matrix<double, N, dimspace> GradientValue;
+    typedef typename Eigen::Matrix<double, N, dimspace> CurlValue;
+    typedef typename Eigen::Matrix<double, N, 1> DivergenceValue;
+
+    typedef typename VectorFamilyType::GeometricSupport GeometricSupport;
+
+    constexpr static const TensorRankE tensorRank = Matrix;
+    constexpr static const bool hasAncestor = true;
+    static const bool hasFunction = VectorFamilyType::hasFunction;
+    static const bool hasGradient = false;//VectorFamilyType::hasGradient;
+    static const bool hasDivergence = VectorFamilyType::hasDivergence;
+    static const bool hasCurl = false;
+
+    typedef VectorFamilyType AncestorType;
+
+    TensorizedMatrixFamily(const VectorFamilyType &vector_family)
+        : m_vector_family(vector_family)
+    {
+      static_assert(VectorFamilyType::tensorRank == Vector,
+                    "Matrix family can only be constructed from vector families");
+    }
+
+    /// Return the dimension of the family
+    inline size_t dimension() const
+    {
+      return m_vector_family.dimension() * N;
+    }
+
+    /// Evaluate the i-th basis function at point x
+    FunctionValue function(size_t i, const VectorRd &x) const
+    {
+      static_assert(hasFunction, "Call to function() not available");
+
+      FunctionValue ek = Eigen::Matrix<double, N, dimspace>::Zero();
+      ek.row(i / m_vector_family.dimension()) = m_vector_family.function(i % m_vector_family.dimension(), x);
+      return ek;
+    }
+
+    /// Evaluate the divergence of the i-th basis function at point x
+    DivergenceValue divergence(size_t i, const VectorRd &x) const
+    {
+      static_assert(hasDivergence, "Call to divergence() not available");
+
+      DivergenceValue ek = Eigen::Matrix<double, N, 1>::Zero();
+      ek(i / m_vector_family.dimension()) = m_vector_family.divergence(i % m_vector_family.dimension(), x);
+      return ek;
+    }
+
+    /// Return the ancestor (family that has been tensorized)
+    constexpr inline const VectorFamilyType &ancestor() const
+    {
+      return m_vector_family;
+    }
+
+    /// Returns the maximum degree of the basis functions
+    inline size_t max_degree() const
+    {
+      return m_vector_family.max_degree();
+    }
+
+  private:
+    VectorFamilyType m_vector_family;
+  };
+
   //----------------------TANGENT FAMILY--------------------------------------------------------
 
   /// Vector family for polynomial functions that are tangent to a certain place (determined by the generators)
@@ -707,6 +795,7 @@ namespace HArDCore3D
     static const bool hasFunction = true;
     static const bool hasGradient = false;
     static const bool hasCurl = false;
+    static const bool hasRot = true; // Add support for Vec->scalar 2d curl
     static const bool hasDivergence = true;
 
     typedef ScalarFamilyType AncestorType;
@@ -734,6 +823,20 @@ namespace HArDCore3D
     inline FunctionValue function(size_t i, const VectorRd &x) const
     {
       return m_generators.row(i / m_scalar_family.dimension()) * m_scalar_family.function(i % m_scalar_family.dimension(), x);
+    }
+
+    /// Evaluate the rot of the i-th basis function at point x
+    // rot([y,x]) = dx y - dy x
+    inline double rot(size_t i, const VectorRd &x) const
+    {
+      Eigen::Vector3d ddir;
+      if (i < m_scalar_family.dimension()) {
+        ddir = - m_generators.row(1);
+      } else {
+        ddir = m_generators.row(0);
+      }
+      // Eigen::Vector3d ddir = (i < m_scalar_family.dimension())? - m_generators.row(1) : m_generators.row(0); // Avoid ternary with Eigen
+      return ddir.dot(m_scalar_family.gradient(i % m_scalar_family.dimension(), x));
     }
 
     /// Evaluate the divergence of the i-th basis function at point x
@@ -953,6 +1056,92 @@ namespace HArDCore3D
     size_t m_dimension;
   };
 
+  //---------------------------------------------------------------------
+  //      Direct sum of spaces
+  //---------------------------------------------------------------------
+  // Construct the direct sum of two families
+  template <typename FirstFamilyType, typename SecondFamilyType>
+  class SumFamily {
+    public:
+      typedef typename FirstFamilyType::FunctionValue FunctionValue;
+      typedef typename FirstFamilyType::GradientValue GradientValue;
+      typedef typename FirstFamilyType::CurlValue CurlValue;
+      typedef typename FirstFamilyType::DivergenceValue DivergenceValue;
+
+      typedef typename FirstFamilyType::GeometricSupport GeometricSupport;
+
+      static const TensorRankE tensorRank = FirstFamilyType::tensorRank;
+      static const bool hasFunction = (FirstFamilyType::hasFunction && SecondFamilyType::hasFunction);
+      static const bool hasGradient = (FirstFamilyType::hasGradient && SecondFamilyType::hasGradient);
+      static const bool hasDivergence = (FirstFamilyType::hasDivergence && SecondFamilyType::hasDivergence);
+      static const bool hasCurl = (FirstFamilyType::hasCurl && SecondFamilyType::hasCurl);
+
+      SumFamily(const FirstFamilyType & first_family, const SecondFamilyType & second_family)
+        : m_first_family(first_family),
+         m_second_family(second_family) 
+          {
+        static_assert(FirstFamilyType::tensorRank == SecondFamilyType::tensorRank ,
+              "SumFamily family can only be constructed from families of same rank");
+      }
+
+      // Return the dimension of the family
+      inline size_t dimension() const {
+          return m_first_family.dimension() + m_second_family.dimension();
+      }
+
+      // Evaluate the i-th basis function at point x
+      FunctionValue function(size_t i, const VectorRd & x) const {
+        static_assert(hasFunction, "Call to function() not available");
+        
+        return (i < m_first_family.dimension())? m_first_family.function(i,x) : m_second_family.function(i - m_first_family.dimension(),x);
+      }
+
+      /// Evaluate the divergence of the i-th basis function at point x
+      DivergenceValue divergence(size_t i, const VectorRd & x) const {
+        static_assert(hasDivergence, "Call to divergence() not available");
+
+        return (i < m_first_family.dimension())? m_first_family.divergence(i,x) : m_second_family.divergence(i - m_first_family.dimension(),x);
+      }
+      
+      /// Evaluate the divergence of the i-th basis function at point x
+      GradientValue gradient(size_t i, const VectorRd & x) const {
+        static_assert(hasGradient, "Call to gradient() not available");
+
+        return (i < m_first_family.dimension())? m_first_family.gradient(i,x) : m_second_family.gradient(i - m_first_family.dimension(),x);
+      }
+
+      /// Evaluate the divergence of the i-th basis function at point x
+      CurlValue curl(size_t i, const VectorRd & x) const {
+        static_assert(hasCurl, "Call to curl() not available");
+
+        return (i < m_first_family.dimension())? m_first_family.curl(i,x) : m_second_family.curl(i - m_first_family.dimension(),x);
+      }    
+      /*
+      /// Evaluate the trace of the i-th basis function at point x
+      TraceValue trace(size_t i, const VectorRd &x) const {
+          static_assert(hasTrace, "Call to trace() not available");
+
+          return (i < m_first_family.dimension())? m_first_family.trace(i,x) : m_second_family.trace(i - m_first_family.dimension(),x);
+      }
+      */
+
+      /// Return the ancestor (family that has been summed)
+      inline const FirstFamilyType &first_ancestor() const {
+        return m_first_family;
+      }
+      
+      /// Return the ancestor (family that has been summed)
+
+      inline const SecondFamilyType &second_ancestor() const {
+        return m_second_family;
+      }
+      
+      
+    private:
+      FirstFamilyType m_first_family;
+      SecondFamilyType m_second_family;
+  };
+
   //--------------------GRADIENT BASIS----------------------------------------------------------
 
   /// Basis for the space of gradients of polynomials.
@@ -1033,7 +1222,7 @@ namespace HArDCore3D
     static const bool hasFunction = true;
     static const bool hasGradient = false;
     static const bool hasCurl = false;
-    static const bool hasDivergence = false;
+    static const bool hasDivergence = true;
 
     typedef BasisType AncestorType;
 
@@ -1058,6 +1247,70 @@ namespace HArDCore3D
     inline FunctionValue function(size_t i, const VectorRd &x) const
     {
       return m_basis.curl(i, x);
+    }
+
+    /// Evaluate the i-th basis divergence at point x
+    inline DivergenceValue divergence(size_t i, const VectorRd &x) const
+    {
+      return 0.;
+    }
+    
+    /// Return the ancestor (basis that the gradient was taken of)
+    constexpr inline const BasisType &ancestor() const
+    {
+      return m_basis;
+    }
+
+
+  private:
+    size_t m_degree;
+    BasisType m_basis;
+  };
+ 
+  //-------------------ROT BASIS-----------------------------------------------------------
+
+  /// Basis for the space of rots of polynomials on a face.
+  template <typename BasisType>
+  class RotBasis
+  {
+  public:
+    typedef double FunctionValue;
+    typedef VectorRd GradientValue;
+    typedef VectorRd CurlValue;
+    typedef double DivergenceValue;
+
+    typedef Face GeometricSupport;
+
+    constexpr static const TensorRankE tensorRank = Scalar;
+    constexpr static const bool hasAncestor = true;
+    static const bool hasFunction = true;
+    static const bool hasGradient = false;
+    static const bool hasCurl = false;
+    static const bool hasDivergence = false;
+
+    typedef BasisType AncestorType;
+
+    /// Constructor
+    RotBasis(const BasisType &basis)
+        : m_basis(basis)
+    {
+      static_assert(
+                        (BasisType::tensorRank == Vector && std::is_same<typename BasisType::GeometricSupport, Face>::value),
+                    "Rot basis can only be constructed starting from vector bases on faces");
+      static_assert(BasisType::hasRot,
+                    "Rot basis requires rot() for the original basis to be available");
+    }
+
+    /// Compute the dimension of the basis
+    inline size_t dimension() const
+    {
+      return m_basis.dimension();
+    }
+
+    /// Evaluate the i-th basis function at point x
+    inline FunctionValue function(size_t i, const VectorRd &x) const
+    {
+      return m_basis.rot(i, x);
     }
     
     /// Return the ancestor (basis that the gradient was taken of)
@@ -1131,23 +1384,6 @@ namespace HArDCore3D
     BasisType m_vector_basis;
   };
 
-
-  /// The following function creates the "scalar rot" basis of a TangentFamily on a face
-  /* It is created as the DivergenceBasis of a TangentFamily obtained rotating the generators by -pi/2 in the oriented face */
-  template <typename ScalarFamilyType>
-  DivergenceBasis<TangentFamily<ScalarFamilyType>> ScalarRotFamily(const TangentFamily<ScalarFamilyType> & tangent_family, const Face & F) 
-  {
-    // Take the generator and rotates them
-    Eigen::MatrixXd gen = tangent_family.generators();
-    VectorRd nF = F.normal();
-    Eigen::MatrixXd rotated_gen = Eigen::MatrixXd::Zero(2, 3);
-    rotated_gen.row(0) = VectorRd(gen.row(0)).cross(nF);
-    rotated_gen.row(1) = VectorRd(gen.row(1)).cross(nF);
-    
-    TangentFamily<ScalarFamilyType> rotated_tangent_family(tangent_family.ancestor(), rotated_gen);
-
-    return DivergenceBasis<TangentFamily<ScalarFamilyType>>(rotated_tangent_family);
-  };
 
   //---------------------------------------------------------------------
   //      BASES FOR THE KOSZUL COMPLEMENTS OF G^k, R^k 
@@ -1365,7 +1601,6 @@ namespace HArDCore3D
     std::vector<Eigen::Vector2i> m_powers;
   };
 
-
   /// Basis for the complement G^{c,k}(F) in P^k(F)^2 of the range of the gradient on a face.
   class GolyComplBasisFace
   {
@@ -1420,6 +1655,463 @@ namespace HArDCore3D
   };
 
   //------------------------------------------------------------------------------
+  // Basis for bP^k(F) 
+  // wi nF \otimes tFi, [tF1,tF2] given by face_tangentbasis
+  // P^k(F) nF \otimes tF1 ... P^k(F) nF \otimes tF2
+  //------------------------------------------------------------------------------
+  template<typename BasisType>
+  class bPolyBasisFace
+  {
+  public:
+    typedef Eigen::Matrix<double, dimspace, dimspace> FunctionValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> GradientValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> CurlValue;
+    typedef Eigen::Vector3d DivergenceValue; 
+
+    typedef Face GeometricSupport;
+
+    constexpr static const TensorRankE tensorRank = Matrix;
+    constexpr static const bool hasAncestor = true;
+    static const bool hasFunction = true;
+    static const bool hasGradient = false;
+    static const bool hasCurl = false;
+    static const bool hasDivergence = true;
+
+    typedef BasisType AncestorType;
+
+    /// Constructor
+    bPolyBasisFace(const BasisType &basis, const Face &F)
+      : m_scalar_basis(basis)
+    {
+      static_assert(BasisType::tensorRank == Scalar,
+                    "bPoly Basis can only be constructed from scalar basis");
+      static_assert(BasisType::hasGradient,
+                    "bPoly Basis must have a gradient");
+      static_assert(std::is_same<typename BasisType::GeometricSupport,Face>::value,
+                    "bPoly Basis can only be constructed on faces");
+      std::vector<VectorRd> tF = F.face_tangentbasis();
+      m_tF1 = tF[0];
+      m_tF2 = tF[1];
+      m_nF = F.normal();
+    }  
+
+    /// Dimension of the basis
+    inline size_t dimension() const
+    {
+      return 2*m_scalar_basis.dimension();
+    }
+
+    /// Evaluate the i-th basis function at point x
+    FunctionValue function(size_t i, const VectorRd &x) const
+    {
+      Eigen::Matrix3d tmp;
+      if (i < m_scalar_basis.dimension()) {
+        tmp.noalias() = m_nF * m_tF1.transpose();
+      } else {
+        tmp.noalias() = m_nF * m_tF2.transpose();
+        i -= m_scalar_basis.dimension();
+      }
+      return m_scalar_basis.function(i,x)*tmp;
+    }
+
+    /// Evaluate the divergence of the i-th basis function at point x
+    DivergenceValue divergence(size_t i, const VectorRd &x) const 
+    {
+      double tmp;
+      if (i < m_scalar_basis.dimension()) {
+        tmp = m_scalar_basis.gradient(i,x).dot(m_tF1);
+      } else {
+        tmp = m_scalar_basis.gradient(i-m_scalar_basis.dimension(),x).dot(m_tF2);
+      }
+      return tmp*m_nF;
+    }
+
+    constexpr inline const BasisType &ancestor() const
+    {
+      return m_scalar_basis;
+    }
+    
+  private:
+    BasisType m_scalar_basis;
+    VectorRd m_tF1;
+    VectorRd m_tF2;
+    VectorRd m_nF;
+  };
+
+  //------------------------------------------------------------------------------
+  // Basis for (R^k(F)^T)^2 
+  // (R^k)_tFj tFi \otimes tFj, [tF1,tF2] given by face_tangentbasis
+  // tF1 \otimes R^k ... tF2 \otimes R^k
+  //------------------------------------------------------------------------------
+  template<typename BasisType>
+  class PolyT2BasisFace
+  {
+  public:
+    typedef Eigen::Matrix<double, dimspace, dimspace> FunctionValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> GradientValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> CurlValue;
+    typedef VectorRd DivergenceValue;
+
+    typedef Face GeometricSupport;
+
+    constexpr static const TensorRankE tensorRank = Matrix;
+    constexpr static const bool hasAncestor = true;
+    static const bool hasFunction = true;
+    static const bool hasGradient = false;
+    static const bool hasCurl = false;
+    static const bool hasDivergence = BasisType::hasDivergence;
+
+    typedef BasisType AncestorType;
+
+    /// Constructor
+    PolyT2BasisFace(const BasisType &basis, const Face &F)
+      : m_vector_basis(basis)
+    {
+      static_assert(BasisType::tensorRank == Vector,
+                    "bPoly Basis can only be constructed from Vector basis");
+      static_assert(std::is_same<typename BasisType::GeometricSupport,Face>::value,
+                    "bPoly Basis can only be constructed on faces");
+      std::vector<VectorRd> tF = F.face_tangentbasis();
+      m_tF1 = tF[0];
+      m_tF2 = tF[1];
+      m_nF = F.normal();
+    }
+
+    /// Dimension of the basis
+    inline size_t dimension() const
+    {
+      return 2*m_vector_basis.dimension();
+    }
+
+    /// Evaluate the i-th basis function at point x
+    FunctionValue function(size_t i, const VectorRd &x) const
+    {
+      Eigen::Matrix3d rv;
+      if (i < m_vector_basis.dimension()) {
+        rv.noalias() = m_tF1 * m_vector_basis.function(i,x).transpose();
+      } else {
+        rv.noalias() = m_tF2 * m_vector_basis.function(i-m_vector_basis.dimension(),x).transpose();
+      }
+      return rv;
+    }
+
+    /// Evaluate the divergence of the i-th basis function at point x
+    DivergenceValue divergence(size_t i, const VectorRd &x) const 
+    {
+      VectorRd rv;
+      if (i < m_vector_basis.dimension()) {
+        rv = m_tF1;
+      } else {
+        i -= m_vector_basis.dimension();
+        rv = m_tF2;
+      }
+      return rv*m_vector_basis.divergence(i,x);
+    }
+
+    constexpr inline const BasisType &ancestor() const
+    {
+      return m_vector_basis;
+    }
+    
+  private:
+    BasisType m_vector_basis;
+    VectorRd m_tF1;
+    VectorRd m_tF2;
+    VectorRd m_nF;
+  };
+
+  //------------------------------------------------------------------------------
+  /// Basis for Rb^{c,k}(F) in P^k(F)^2
+  //------------------------------------------------------------------------------
+  class RolybComplBasisFace
+  {
+  public:
+    typedef MatrixRd FunctionValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> GradientValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> CurlValue;
+    typedef VectorRd DivergenceValue;
+
+    typedef Face GeometricSupport;
+
+    typedef Eigen::Matrix<double, 2, dimspace> JacobianType;
+
+    constexpr static const TensorRankE tensorRank = Matrix;
+    constexpr static const bool hasAncestor = false;
+    static const bool hasFunction = true;
+    static const bool hasGradient = false;
+    static const bool hasCurl = false;
+    static const bool hasDivergence = true;
+
+    /// Constructor
+    RolybComplBasisFace(
+        const Face &F, ///< A mesh face
+        size_t degree  ///< The maximum polynomial degree to be considered
+    );
+    // Default constructor
+    RolybComplBasisFace(): m_degree(0),m_xF(VectorRd::Zero()),m_nF(VectorRd::Zero()),m_hF(0.),m_jacobian(JacobianType::Zero()) {}
+
+    /// Dimension of the basis
+    inline size_t dimension() const
+    {
+      return PolynomialSpaceDimension<Face>::RolybCompl(m_degree);
+    }
+
+    /// Evaluate the i-th basis function at point x
+    FunctionValue function(size_t i, const VectorRd &x) const;
+
+    /// Evaluate the divergence of the i-th basis function at point x
+    DivergenceValue divergence(size_t i, const VectorRd &x) const;
+
+    /// Return the Jacobian of the coordinate system transformation
+    inline const JacobianType &jacobian() const
+    {
+      return m_jacobian;
+    }
+
+    /// Returns the maximum degree of the basis functions
+    inline size_t max_degree() const
+    {
+      return m_degree;
+    }
+    
+    /// Returns the powers of the i-th basis function
+    inline Eigen::Vector2i powers(size_t i) const
+    {
+      return m_powers[i];
+    }
+    
+  private:
+    /// Coordinate transformation
+    inline Eigen::Vector2d _coordinate_transform(const VectorRd &x) const
+    {
+      return m_jacobian * (x - m_xF);
+    }
+
+    size_t m_degree;
+    VectorRd m_xF;
+    VectorRd m_nF;
+    double m_hF;
+    JacobianType m_jacobian;
+    std::vector<Eigen::Vector2i> m_powers;
+  };
+
+  //------------------------------------------------------------------------------
+  /// Basis for Rb^{k}(F) in P^k(F)^2
+  //------------------------------------------------------------------------------
+  class RolybBasisFace
+  {
+  public:
+    typedef MatrixRd FunctionValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> GradientValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> CurlValue;
+    typedef VectorRd DivergenceValue;
+
+    typedef Face GeometricSupport;
+
+    typedef Eigen::Matrix<double, 2, dimspace> JacobianType;
+
+    constexpr static const TensorRankE tensorRank = Matrix;
+    constexpr static const bool hasAncestor = false;
+    static const bool hasFunction = true;
+    static const bool hasGradient = false;
+    static const bool hasCurl = false;
+    static const bool hasDivergence = true;
+
+    /// Constructor
+    RolybBasisFace(
+        const Face &F, ///< A mesh face
+        size_t degree  ///< The maximum polynomial degree to be considered
+    );
+
+    /// Dimension of the basis
+    inline size_t dimension() const
+    {
+      return PolynomialSpaceDimension<Face>::Rolyb(m_degree);
+    }
+
+    /// Evaluate the i-th basis function at point x
+    FunctionValue function(size_t i, const VectorRd &x) const;
+
+    /// Evaluate the divergence of the i-th basis function at point x
+    DivergenceValue divergence(size_t i, const VectorRd &x) const;
+
+    /// Return the Jacobian of the coordinate system transformation
+    inline const JacobianType &jacobian() const
+    {
+      return m_jacobian;
+    }
+
+    /// Returns the maximum degree of the basis functions
+    inline size_t max_degree() const
+    {
+      return m_degree;
+    }
+    /* 
+    /// Returns the powers of the i-th basis function
+    inline Eigen::Vector2i powers(size_t i) const
+    {
+      return m_powers[i+1];
+    }
+    */
+    
+  private:
+    /// Coordinate transformation
+    inline Eigen::Vector2d _coordinate_transform(const VectorRd &x) const
+    {
+      return m_jacobian * (x - m_xF);
+    }
+
+    size_t m_degree;
+    VectorRd m_xF;
+    VectorRd m_nF;
+    double m_hF;
+    JacobianType m_jacobian;
+    std::vector<Eigen::Vector2i> m_powers;
+  };
+
+  //------------------------------------------------------------------------------
+  /// Basis for Rb^{k}(T)
+  //------------------------------------------------------------------------------
+  class RolybBasisCell
+  {
+  public:
+    typedef MatrixRd FunctionValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> GradientValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> CurlValue;
+    typedef VectorRd DivergenceValue;
+
+    typedef Cell GeometricSupport;
+
+    constexpr static const TensorRankE tensorRank = Matrix;
+    constexpr static const bool hasAncestor = false;
+    static const bool hasFunction = true;
+    static const bool hasGradient = false;
+    static const bool hasCurl = false;
+    static const bool hasDivergence = true;
+
+    /// Constructor
+    RolybBasisCell(
+        const Cell &T, ///< A mesh face
+        size_t degree  ///< The maximum polynomial degree to be considered
+    );
+    // Default constructor
+    RolybBasisCell(): m_degree(0),m_xT(VectorRd::Zero()),m_hT(0.) {}
+
+    /// Dimension of the basis
+    inline size_t dimension() const
+    {
+      return PolynomialSpaceDimension<Cell>::Rolyb(m_degree);
+    }
+
+    /// Evaluate the i-th basis function at point x
+    FunctionValue function(size_t i, const VectorRd &x) const;
+
+    /// Evaluate the divergence of the i-th basis function at point x
+    DivergenceValue divergence(size_t i, const VectorRd &x) const;
+
+    /// Returns the maximum degree of the basis functions
+    inline size_t max_degree() const
+    {
+      return m_degree;
+    }
+    
+    /// Returns the powers of the i-th basis function
+    inline VectorZd powers(size_t i) const
+    {
+      return m_powers[i+1];
+    }
+    
+  private:
+    /// Coordinate transformation
+    inline VectorRd _coordinate_transform(const VectorRd &x) const
+    {
+      return (x - m_xT)/ m_hT;
+    }
+
+    size_t m_degree;
+    VectorRd m_xT;
+    double m_hT;
+    std::vector<VectorZd> m_powers;
+  };
+
+  //------------------------------------------------------------------------------
+  /// Basis for Rcb^{k}(T)
+  //------------------------------------------------------------------------------
+  class RolybComplBasisCell
+  {
+  public:
+    typedef MatrixRd FunctionValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> GradientValue;
+    typedef Eigen::Matrix<double, dimspace, dimspace> CurlValue;
+    typedef VectorRd DivergenceValue;
+
+    typedef Cell GeometricSupport;
+
+    constexpr static const TensorRankE tensorRank = Matrix;
+    constexpr static const bool hasAncestor = false;
+    static const bool hasFunction = true;
+    static const bool hasGradient = false;
+    static const bool hasCurl = false;
+    static const bool hasDivergence = true;
+
+    /// Constructor
+    RolybComplBasisCell(
+        const Cell &T, ///< A mesh face
+        size_t degree  ///< The maximum polynomial degree to be considered
+    );
+    // Default constructor
+    RolybComplBasisCell(): m_degree(0),m_xT(VectorRd::Zero()),m_hT(0.),dim_Pkm2_F(0),dim_Pkm3_T(0) {}
+
+    /// Dimension of the basis
+    inline size_t dimension() const
+    {
+      return PolynomialSpaceDimension<Cell>::RolybCompl(m_degree);
+    }
+
+    /// Evaluate the i-th basis function at point x
+    FunctionValue function(size_t i, const VectorRd &x) const;
+
+    /// Evaluate the divergence of the i-th basis function at point x
+    DivergenceValue divergence(size_t i, const VectorRd &x) const;
+
+    /// Returns the maximum degree of the basis functions
+    inline size_t max_degree() const
+    {
+      return m_degree;
+    }
+    
+  private:
+    /// Coordinate transformation
+    inline VectorRd _coordinate_transform(const VectorRd &x) const
+    {
+      return (x - m_xT)/ m_hT;
+    }
+    // Map indice to correct part
+    inline void map_powers(size_t &i,size_t &j) const
+    {
+      if (i < 3*dim_Pkm2_F) {
+        j = i/dim_Pkm2_F;
+        i %= dim_Pkm2_F;
+      } else {
+        i -= 3*dim_Pkm2_F;
+        j = 3 + i/dim_Pkm3_T;
+        i %= dim_Pkm3_T;
+      }
+    }
+
+    size_t m_degree;
+    VectorRd m_xT;
+    double m_hT;
+    size_t dim_Pkm2_F;
+    size_t dim_Pkm3_T;
+    std::vector<Eigen::Vector2i> m_powers_L;
+    std::vector<Eigen::Vector2i> m_powers_B;
+    std::vector<Eigen::Vector2i> m_powers_G;
+    std::vector<Eigen::Vector3i> m_powers_C1;
+    std::vector<Eigen::Vector3i> m_powers_C2;
+  };
+
+  //------------------------------------------------------------------------------
   //            Free functions
   //------------------------------------------------------------------------------
 
@@ -1443,7 +2135,7 @@ namespace HArDCore3D
     std::transform( B_quad.origin(), B_quad.origin() + B_quad.num_elements(), transformed_B_quad.origin(), F);
 
     return transformed_B_quad;
-  };
+  }
 
   //------------------------------------------------------------------------------
   //                      BASIS EVALUATIONS
@@ -1871,7 +2563,23 @@ namespace HArDCore3D
     return basis_dot_v_quad;
   }
 
+  /// Compute the Matrix-Vector product of a basis and a constant value
+  boost::multi_array<VectorRd, 2> matrix_vector_product(
+    const boost::multi_array<MatrixRd, 2> &basis_quad,
+    const VectorRd &v
+  );
+
+  /// Compute V - (V * n) \otimes n
+  boost::multi_array<MatrixRd, 2> tensor_tangent_product(
+    const boost::multi_array<MatrixRd, 2> &basis_quad,
+    const VectorRd &v
+  );
   
+  /// Compute the Matrix-Vector product of a basis and a constant value
+  boost::multi_array<double, 2> eval_trace_quad(
+    const boost::multi_array<MatrixRd, 2> &basis_quad
+  );
+
   /// Compute the vector (cross) product between the evaluation of a basis and a constant vector
   boost::multi_array<VectorRd, 2>
   vector_product(

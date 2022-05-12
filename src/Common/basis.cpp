@@ -51,8 +51,11 @@ namespace HArDCore3D
         m_powers(MonomialPowers<Face>::complete(degree))
   {
     // Compute change of variables
-    m_jacobian.row(0) = F.edge(0)->tangent();
-    m_jacobian.row(1) = F.edge_normal(0);
+    //m_jacobian.row(0) = F.edge(0)->tangent();
+    //m_jacobian.row(1) = F.edge_normal(0);
+    std::vector<VectorRd> tmp = F.face_tangentbasis();
+    m_jacobian.row(0) = tmp[0];
+    m_jacobian.row(1) = tmp[1];
     m_jacobian /= m_hF;
   }
 
@@ -234,8 +237,11 @@ namespace HArDCore3D
     }
   
     // Compute change of variable
-    m_jacobian.row(0) = F.edge(0)->tangent();
-    m_jacobian.row(1) = F.edge_normal(0);
+    //m_jacobian.row(0) = F.edge(0)->tangent();
+    //m_jacobian.row(1) = F.edge_normal(0);
+    std::vector<VectorRd> tmp = F.face_tangentbasis();
+    m_jacobian.row(0) = tmp[0];
+    m_jacobian.row(1) = tmp[1];
     m_jacobian /= m_hF;
   }
 
@@ -271,6 +277,303 @@ namespace HArDCore3D
     return (m_Rck_basis->function(i, x)).cross(m_nF);
   }
 
+  //------------------------------------------------------------------------------
+  // Basis for Rb^{c,k}(F)
+  //------------------------------------------------------------------------------
+
+  RolybComplBasisFace::RolybComplBasisFace(const Face &F, size_t degree)
+      : m_degree(degree),
+        m_xF(F.center_mass()),
+        m_nF(F.normal()),
+        m_hF(F.diam()),
+        m_jacobian(Eigen::Matrix<double, 2, dimspace>::Zero())
+  {
+    // Compute monomial powers for P^{k-1}(F)
+    if (degree>1){
+      m_powers = MonomialPowers<Face>::complete(degree-2);
+    }else{
+      std::cout << "Attempting to construct RbckF with degree < 2, stopping" << std::endl;
+      exit(1);
+    }
+  
+    // Compute change of variable
+    std::vector<VectorRd> tmp = F.face_tangentbasis();
+    m_jacobian.row(0) = tmp[0];
+    m_jacobian.row(1) = tmp[1];
+    m_jacobian /= m_hF;
+  }
+
+  // [-xyQ & - yyQ// xxQ & xyQ] = Q [-y//x] [x & y] = Q rot(pi/2, nF)*[x // y] * [x//y]^T
+  RolybComplBasisFace::FunctionValue RolybComplBasisFace::function(size_t i, const VectorRd &x) const
+  {
+    Eigen::Vector2d y = _coordinate_transform(x);
+    const Eigen::Vector2i &powers = m_powers[i];
+    return std::pow(y(0), powers(0)) * std::pow(y(1), powers(1)) * 
+            (Eigen::AngleAxisd(0.5*Math::PI,m_nF)*(x - m_xF)) *(x-m_xF).transpose()/(m_hF*m_hF);
+  }
+
+  RolybComplBasisFace::DivergenceValue RolybComplBasisFace::divergence(size_t i, const VectorRd &x) const
+  {
+    Eigen::Vector2d y = _coordinate_transform(x);
+    const Eigen::Vector2i &powers = m_powers[i];
+    return (Eigen::AngleAxisd(0.5*Math::PI,m_nF)*(x - m_xF))*
+        (powers(0)+powers(1)+3) * std::pow(y(0), powers(0)) * std::pow(y(1), powers(1)) / (m_hF*m_hF);
+  }
+
+  //------------------------------------------------------------------------------
+  // Basis for Rb^{k}(F)
+  //------------------------------------------------------------------------------
+
+  RolybBasisFace::RolybBasisFace(const Face &F, size_t degree)
+      : m_degree(degree),
+        m_xF(F.center_mass()),
+        m_nF(F.normal()),
+        m_hF(F.diam()),
+        m_jacobian(Eigen::Matrix<double, 2, dimspace>::Zero())
+  {
+    // Compute monomial powers for P^{k}(F)
+    if (degree>=1){
+      m_powers = MonomialPowers<Face>::complete(degree);
+    }else{
+      std::cout << "Attempting to construct RbkF with degree 0, stopping" << std::endl;
+      exit(1);
+    }
+  
+    // Compute change of variable
+    std::vector<VectorRd> tmp = F.face_tangentbasis();
+    m_jacobian.row(0) = tmp[0];
+    m_jacobian.row(1) = tmp[1];
+    m_jacobian /= m_hF;
+  }
+
+  // (div^-1)_{i,j} = h/(2 + i + j) 1_{i,j}; (grad)_{i,j} -> 1/h [i 1_{i-1,j} // j 1_{i,j-1}]
+  // (div^-1 grad)_{i,j} = 1/(2 + i + j - 1) [X i 1_{i-1,j} // X j 1_{i,j-1}]
+  RolybBasisFace::FunctionValue RolybBasisFace::function(size_t i, const VectorRd &x) const
+  {
+    i++; // shift i, discard constant
+    Eigen::Vector2d y = _coordinate_transform(x);
+    const Eigen::Vector2i &powers = m_powers[i];
+    Eigen::Matrix3d rv = Eigen::Matrix3d::Zero();
+    // We assume that m_powers[i] = [0,0] iff i = 0
+    if (powers(0) == 0) { // Avoid 0*x^-1 
+      rv = powers(1)* std::pow(y(1),powers(1)-1) * m_jacobian.row(1).transpose() * (x - m_xF).transpose();
+        // j x^0 y^{j-1} tF2 \otimes (X - X_F)/hF 
+    } else if (powers(1) == 0) {
+      rv = powers(0)* std::pow(y(0),powers(0)-1) * m_jacobian.row(0).transpose() * (x - m_xF).transpose();
+    } else {
+      rv = powers(0)* std::pow(y(0),powers(0)-1) * std::pow(y(1),powers(1))
+            * m_jacobian.row(0).transpose() * (x - m_xF).transpose();
+      rv += powers(1)* std::pow(y(1),powers(1)-1) * std::pow(y(0),powers(0))
+            * m_jacobian.row(1).transpose() * (x - m_xF).transpose();
+    } 
+    return rv/(1. + powers(0) + powers(1));
+  }
+
+  RolybBasisFace::DivergenceValue RolybBasisFace::divergence(size_t i, const VectorRd &x) const
+  {
+    i++;
+    Eigen::Vector2d y = _coordinate_transform(x);
+    const Eigen::Vector2i &powers = m_powers[i];
+    Eigen::Vector3d rv = Eigen::Vector3d::Zero();
+    if (powers(0) == 0) {
+      rv = powers(1) * std::pow(y(1),powers(1) - 1) * m_jacobian.row(1).transpose();
+    } else if (powers(1) == 0) {  
+      rv = powers(0) * std::pow(y(0),powers(0) - 1) * m_jacobian.row(0).transpose();
+    } else {
+      rv = powers(1) * std::pow(y(1),powers(1) - 1) * std::pow(y(0),powers(0)) * m_jacobian.row(1).transpose();
+      rv += powers(0) * std::pow(y(0),powers(0) - 1) * std::pow(y(1),powers(1)) * m_jacobian.row(0).transpose();
+    }
+    return rv; // jacobian = ntF /hF
+  }
+
+  //------------------------------------------------------------------------------
+  // Basis for Rb^{k}(T)
+  //------------------------------------------------------------------------------
+
+  RolybBasisCell::RolybBasisCell(const Cell &T, size_t degree)
+      : m_degree(degree),
+        m_xT(T.center_mass()),
+        m_hT(T.diam())
+  {
+    // Compute monomial powers for P^{k}(T)
+    if (degree>=1){
+      m_powers = MonomialPowers<Cell>::complete(degree);
+    }else{
+      std::cout << "Attempting to construct RbkT with degree 0, stopping" << std::endl;
+      exit(1);
+    }
+  }
+
+  // (div^-1)_{i,j,k} = h/(3 + i + j + k) 1_{i,j,k}; (grad)_{i,j,k} -> 1/h [i 1_{i-1,j,k} // ...]
+  // (div^-1 grad)_{i,j} = 1/(3 + i + j + k - 1) [X i 1_{i-1,j,k} // ...]
+  RolybBasisCell::FunctionValue RolybBasisCell::function(size_t i, const VectorRd &x) const
+  {
+    i++; // shift i, discard constant
+    VectorRd y = _coordinate_transform(x);
+    const VectorZd &powers = m_powers[i];
+    Eigen::Matrix3d rv = Eigen::Matrix3d::Zero();
+    if (powers(0) > 0) {
+      rv.row(0) = powers(0)* std::pow(y(0),powers(0)-1) * std::pow(y(1),powers(1)) * std::pow(y(2),powers(2)) * y;
+    }
+    if (powers(1) > 0) {
+      rv.row(1) = powers(1)* std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)-1) * std::pow(y(2),powers(2)) * y;
+    }
+    if (powers(2) > 0) {
+      rv.row(2) = powers(2)* std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)) * std::pow(y(2),powers(2)-1) * y;
+    }
+    return rv/(2. + powers(0) + powers(1) + powers(2));
+  }
+
+  RolybBasisCell::DivergenceValue RolybBasisCell::divergence(size_t i, const VectorRd &x) const
+  {
+    i++; // shift i, discard constant
+    VectorRd y = _coordinate_transform(x);
+    const VectorZd &powers = m_powers[i];
+    Eigen::Vector3d rv = Eigen::Vector3d::Zero();
+    if (powers(0) > 0) {
+      rv(0) = powers(0)* std::pow(y(0),powers(0)-1) * std::pow(y(1),powers(1)) * std::pow(y(2),powers(2));
+    }
+    if (powers(1) > 0) {
+      rv(1) = powers(1)* std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)-1) * std::pow(y(2),powers(2));
+    }
+    if (powers(2) > 0) {
+      rv(2) = powers(2)* std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)) * std::pow(y(2),powers(2)-1);
+    }
+    return rv/m_hT;
+  }
+
+  //------------------------------------------------------------------------------
+  // Basis for Rb^{c,k}(T)
+  //------------------------------------------------------------------------------
+
+  RolybComplBasisCell::RolybComplBasisCell(const Cell &T, size_t degree)
+      : m_degree(degree),
+        m_xT(T.center_mass()),
+        m_hT(T.diam()),
+        dim_Pkm2_F(PolynomialSpaceDimension<Face>::Poly(degree-2)),
+        dim_Pkm3_T(PolynomialSpaceDimension<Cell>::Poly(degree-3))
+  {
+    // Compute monomial powers for P^{k-1}(T)
+    if (degree<2){
+      std::cout << "Attempting to construct RbckT with degree < 2, stopping" << std::endl;
+      exit(1);
+    }else{
+      m_powers_L = MonomialPowers<Face>::complete(degree-2); // Y, Z
+      m_powers_B = MonomialPowers<Face>::complete(degree-2); // X, Z
+      m_powers_G = MonomialPowers<Face>::complete(degree-2); // X, Y
+      if (degree> 2) {
+        m_powers_C1 = MonomialPowers<Cell>::complete(degree-3); // C1
+        m_powers_C2 = MonomialPowers<Cell>::complete(degree-3); // C2
+      }
+    }
+  }
+
+  RolybComplBasisCell::FunctionValue RolybComplBasisCell::function(size_t i, const VectorRd &x) const
+  {
+    VectorRd y = _coordinate_transform(x);
+    size_t il = i,j;
+    map_powers(il,j);
+    MatrixRd rv = MatrixRd::Zero();
+    switch (j) {
+      case(0) : // Lambda, P2 = z Lambda, P3 = - y Lambda
+        {
+        const Eigen::Vector2i &powers = m_powers_L[il];
+        double Lambda = std::pow(y(1),powers(0)) * std::pow(y(2),powers(1)); // Y^i Z^j
+        rv.row(1) = y * y(2) * Lambda; // P2 = z Lambda
+        rv.row(2) = y * (-y(1)) * Lambda; // P3 = - y Lambda
+        }
+        break;
+      case(1): 
+        {
+        const Eigen::Vector2i &powers = m_powers_B[il];
+        double Beta = std::pow(y(0),powers(0)) * std::pow(y(2),powers(1)); // X^i Z^j
+        rv.row(0) = y * (-y(2)) * Beta; // P1 = - z Beta
+        rv.row(2) = y * y(0) * Beta; // P3 = x Beta
+        }
+        break;
+      case(2): 
+        {
+        const Eigen::Vector2i &powers = m_powers_G[il];
+        double Gamma = std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)); // X^i Y^j
+        rv.row(0) = y * y(1) * Gamma; // P1 = y Gamma
+        rv.row(1) = y * (-y(0)) * Gamma; // P2 = -x Gamma
+        }
+        break;
+      case(3): // C1; C3 = -C1 - C2
+        {
+        const Eigen::Vector3i &powers = m_powers_C1[il];
+        double C = std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)) * std::pow(y(2),powers(2));
+        rv.row(0) = y * y(1) * y(2) * C; // P1 = y z C1
+        rv.row(2) = y * (-y(0)) * y(1) * C; // P3 = x y C3 = - x y C1
+        }
+        break;
+      case(4): // C2; C3 = -C1 - C2
+        {
+        const Eigen::Vector3i &powers = m_powers_C2[il];
+        double C = std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)) * std::pow(y(2),powers(2));
+        rv.row(1) = y * y(0) * y(2) * C; // P2 = x z C1
+        rv.row(2) = y * (-y(0)) * y(1) * C; // P3 = x y C3 = - x y C1
+        }
+        break;
+    }
+    return rv;
+  }
+
+  RolybComplBasisCell::DivergenceValue RolybComplBasisCell::divergence(size_t i, const VectorRd &x) const
+  {
+    VectorRd y = _coordinate_transform(x);
+    size_t il = i,j;
+    map_powers(il,j);
+    VectorRd rv = VectorRd::Zero();
+    switch (j) {
+      case(0) : // Lambda, P2 = z Lambda, P3 = - y Lambda
+        {
+        const Eigen::Vector2i &powers = m_powers_L[il];
+        double Lambda = std::pow(y(1),powers(0)) * std::pow(y(2),powers(1)); // Y^i Z^j
+        Lambda *= 4. + powers(0) + powers(1); // Lambda -> Lambda'
+        rv(1) = y(2) * Lambda; // z Lambda'
+        rv(2) = -y(1) * Lambda; // - y Lambda'
+        }
+        break;
+      case(1): 
+        {
+        const Eigen::Vector2i &powers = m_powers_B[il];
+        double Beta = std::pow(y(0),powers(0)) * std::pow(y(2),powers(1)); // X^i Z^j
+        Beta *= 4. + powers(0) + powers(1); // Beta -> Beta'
+        rv(0) = -y(2) * Beta; // - z Beta
+        rv(2) = y(0) * Beta; // x Beta
+        }
+        break;
+      case(2): 
+        {
+        const Eigen::Vector2i &powers = m_powers_G[il];
+        double Gamma = std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)); // X^i Y^j
+        Gamma *= 4. + powers(0) + powers(1); // Gamma -> Gamma'
+        rv(0) = y(1) * Gamma; // y Gamma
+        rv(1) = -y(0) * Gamma; // -x Gamma
+        }
+        break;
+      case(3): // C1; C3 = -C1 - C2
+        {
+        const Eigen::Vector3i &powers = m_powers_C1[il];
+        double C = std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)) * std::pow(y(2),powers(2));
+        C *= 5. + powers(0) + powers(1) + powers(2);
+        rv(0) = y(1) * y(2) * C; // y z C1
+        rv(2) = -y(0) * y(1) * C; // x y C3 = - x y C1
+        }
+        break;
+      case(4): // C2; C3 = -C1 - C2
+        {
+        const Eigen::Vector3i &powers = m_powers_C2[il];
+        double C = std::pow(y(0),powers(0)) * std::pow(y(1),powers(1)) * std::pow(y(2),powers(2));
+        C *= 5. + powers(0) + powers(1) + powers(2);
+        rv(1) = y(0) * y(2) * C; // x z C1
+        rv(2) = -y(0) * y(1) * C; // x y C3 = - x y C1
+        }
+        break;
+    }
+    return rv/m_hT;
+  }
 
   //------------------------------------------------------------------------------
   // A common notion of scalar product for scalars and vectors
@@ -293,15 +596,35 @@ namespace HArDCore3D
   
   double scalar_product(const MatrixRd &x, const MatrixRd &y)
   {
-    double val = 0.0;
-    for (int i = 0; i < x.rows(); ++i)
-    {
-        for (int j = 0; j < x.cols(); ++j)
-        {
-            val += x(i, j) * y(i, j);
-        }
-    }
-    return val;
+    return x.cwiseProduct(y).sum();
+  }
+
+  boost::multi_array<VectorRd, 2> matrix_vector_product(
+    const boost::multi_array<MatrixRd, 2> &basis_quad,
+    const VectorRd &v)
+  {
+    boost::multi_array<VectorRd, 2> basis_dot_v_quad(boost::extents[basis_quad.shape()[0]][basis_quad.shape()[1]]);
+    std::transform(basis_quad.origin(),basis_quad.origin() + basis_quad.num_elements(),
+    basis_dot_v_quad.origin(), [&v](const MatrixRd &x) -> VectorRd { return x*v; });
+    return basis_dot_v_quad;
+  }
+
+  boost::multi_array<MatrixRd, 2> tensor_tangent_product(
+    const boost::multi_array<MatrixRd, 2> &basis_quad,
+    const Eigen::Matrix<double,3,1> &v)
+  {
+    boost::multi_array<MatrixRd, 2> basis_dot_v_quad(boost::extents[basis_quad.shape()[0]][basis_quad.shape()[1]]);
+    std::transform(basis_quad.origin(),basis_quad.origin() + basis_quad.num_elements(),
+    basis_dot_v_quad.origin(), [&v](const MatrixRd &x) -> MatrixRd { return x - (x*v)*v.transpose(); });
+    return basis_dot_v_quad;
+  }
+
+  boost::multi_array<double, 2> eval_trace_quad(const boost::multi_array<MatrixRd, 2> &basis_quad)
+  {
+    boost::multi_array<double, 2> basis_trace_quad(boost::extents[basis_quad.shape()[0]][basis_quad.shape()[1]]);
+    std::transform(basis_quad.origin(),basis_quad.origin() + basis_quad.num_elements(),
+    basis_trace_quad.origin(), [](const MatrixRd &x) -> double {return x.trace();});
+    return basis_trace_quad;
   }
 
   boost::multi_array<VectorRd, 2>

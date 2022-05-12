@@ -79,6 +79,18 @@ bool VtuWriter::write_to_vtu(const std::string filename, const Eigen::VectorXd &
 	return true;
 }
 
+bool VtuWriter::write_to_vtu(const std::string filename) {
+
+  FILE* pFile=fopen(filename.c_str(),"w");
+	write_header(pFile);
+	write_vertices(pFile);
+	//write_solution(pFile, sol_vrtx);
+	write_cells(pFile);
+	write_footer(pFile);
+	fclose(pFile);
+	return true;
+}
+
 bool VtuWriter::write_header(FILE* pFile){
     fprintf (pFile,"%s","<VTKFile type=\"UnstructuredGrid\"");
     fprintf (pFile,"%s"," version=\"0.1\"");

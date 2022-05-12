@@ -28,7 +28,7 @@ namespace HArDCore3D
    */
    
     /// Function to store and display wall/proc timers from boost::timer::cpu_timer. 
-    /** Wall time is in the first element of the pair, proc time in the second */
+    /* Wall time is in the first element of the pair, proc time in the second */
     inline std::pair<double,double> store_times(
                               boost::timer::cpu_timer & timer,  ///< The timer
                               std::string message = ""        ///< Optional message to display with time (if not message is passed, times are not displayed)
@@ -42,6 +42,34 @@ namespace HArDCore3D
       }
 
       return std::make_pair(twall, tproc);
+    }
+
+    class timer_hist {
+      public:
+        boost::timer::cpu_timer timer;
+        std::vector<double> wtimes;
+        std::vector<double> ptimes;
+        std::vector<std::string> ntimes;
+
+        timer_hist() {};
+
+        timer_hist(bool start) {
+          if (not start) timer.stop();
+        }
+
+        void start () {
+          timer.start();
+        }
+
+        void stop (std::string name = "") {
+          timer.stop();
+          double twall = double(timer.elapsed().wall) * pow(10, -9);
+          double tproc = double(timer.elapsed().user + timer.elapsed().system) * pow(10, -9);
+          wtimes.emplace_back(twall);
+          ptimes.emplace_back(tproc);
+          ntimes.emplace_back(name);
+        }
+
     };
 
   //@}

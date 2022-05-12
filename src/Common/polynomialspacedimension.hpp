@@ -54,34 +54,14 @@ namespace HArDCore3D
   {
     // Only specializations are relevant
   };
-  
+
   template<>
-  struct PolynomialSpaceDimension<Cell>
+  struct PolynomialSpaceDimension<Edge>
   {
-    /// Dimension of Pk(T)
+    /// Dimension of Pk(E)
     static size_t Poly(int k)
     {
-      return (k >= 0 ? (k+1)*(k+2)*(k+3)/6 : 0);
-    }
-    /// Dimension of Gk(T)
-    static size_t Goly(int k)
-    {
-      return (k >= 0 ? PolynomialSpaceDimension<Cell>::Poly(k + 1) - 1 : 0);
-    }
-    /// Dimension of Gck(T)
-    static size_t GolyCompl(int k)
-    {
-      return 3 * PolynomialSpaceDimension<Cell>::Poly(k) - PolynomialSpaceDimension<Cell>::Goly(k);
-    }
-    /// Dimension of Rk(T)
-    static size_t Roly(int k)
-    {
-      return (k >= 0 ? PolynomialSpaceDimension<Cell>::GolyCompl(k + 1) : 0);
-    }
-    /// Dimension of Rck(T)
-    static size_t RolyCompl(int k)
-    {
-      return 3 * PolynomialSpaceDimension<Cell>::Poly(k) - PolynomialSpaceDimension<Cell>::Roly(k);
+      return (k >= 0 ? k + 1 : 0);
     }
   };
 
@@ -113,15 +93,84 @@ namespace HArDCore3D
     {
       return 2 * PolynomialSpaceDimension<Face>::Poly(k) - PolynomialSpaceDimension<Face>::Roly(k);
     }
-  };
 
+    /// Dimension of Rb(F)
+    static size_t Rolyb(int k)
+    {
+      return PolynomialSpaceDimension<Face>::Poly(k) - 1;
+    }
+
+    /// Dimension of Rbc(F)
+    static size_t RolybCompl(int k)
+    {
+      return PolynomialSpaceDimension<Face>::Poly(k-2);
+    }
+
+    // Dimension of RTb(F)
+    static size_t RTb(int k)
+    {
+      return PolynomialSpaceDimension<Face>::RolybCompl(k) + PolynomialSpaceDimension<Face>::Rolyb(k-1) + 2*PolynomialSpaceDimension<Face>::Roly(k - 1);
+    }
+      
+    // Dimension of tildeP(F)
+    static size_t tildePoly(int k)
+    {
+      return 6*PolynomialSpaceDimension<Face>::Poly(k);
+    }
+  };
+  
   template<>
-  struct PolynomialSpaceDimension<Edge>
+  struct PolynomialSpaceDimension<Cell>
   {
-    /// Dimension of Pk(E)
+    /// Dimension of Pk(T)
     static size_t Poly(int k)
     {
-      return (k >= 0 ? k + 1 : 0);
+      return (k >= 0 ? (k+1)*(k+2)*(k+3)/6 : 0);
+    }
+    /// Dimension of Gk(T)
+    static size_t Goly(int k)
+    {
+      return (k >= 0 ? PolynomialSpaceDimension<Cell>::Poly(k + 1) - 1 : 0);
+    }
+    /// Dimension of Gck(T)
+    static size_t GolyCompl(int k)
+    {
+      return 3 * PolynomialSpaceDimension<Cell>::Poly(k) - PolynomialSpaceDimension<Cell>::Goly(k);
+    }
+    /// Dimension of Rk(T)
+    static size_t Roly(int k)
+    {
+      return (k >= 0 ? PolynomialSpaceDimension<Cell>::GolyCompl(k + 1) : 0);
+    }
+    /// Dimension of Rck(T)
+    static size_t RolyCompl(int k)
+    {
+      return 3 * PolynomialSpaceDimension<Cell>::Poly(k) - PolynomialSpaceDimension<Cell>::Roly(k);
+    }
+
+    /// Dimension of Rb(T)
+    static size_t Rolyb(int k)
+    {
+      return (k >= 1 ? PolynomialSpaceDimension<Cell>::Poly(k) - 1 : 0);
+    }
+
+    /// Dimension of Rbc(T)
+    static size_t RolybCompl(int k)
+    {
+      if (k > 2) {
+        return 3 * PolynomialSpaceDimension<Face>::Poly(k-2) + 2 * PolynomialSpaceDimension<Cell>::Poly(k-3);
+      } else if (k > 1) {
+        return 3 * PolynomialSpaceDimension<Face>::Poly(k-2);
+      } else {
+        return 0;
+      }
+    }
+
+    /// Dimension of RTb(T)
+    static size_t RTb(int k)
+    {
+      return PolynomialSpaceDimension<Cell>::RolybCompl(k) + PolynomialSpaceDimension<Cell>::Rolyb(k-1) + 
+              3 * PolynomialSpaceDimension<Cell>::Roly(k-1);
     }
   };
 

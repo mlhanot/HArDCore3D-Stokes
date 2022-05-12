@@ -1,3 +1,17 @@
+# HArDCore3D-Stokes
+
+Fork of HArDCore3D adding support for the Stokes complex (xxxx). See the original description below.
+
+This fork also introduce the option to save assembled operators in a file for later use and a rudimentary interface to PETSc. 
+The HArDCore library make heavy use of threads parallelism, hence the transition toward the MPI paradigm used in PETSc is far from trivial.
+Currently it is achieved by introducing another main (found in src/Solver) acting as a basic state machine answering commands from the main process.
+The resolution is done in two steps: first the system is assembled in parallel (multi-threaded) by a single process, the other being idle.
+Then all threads are joined, data is spread accross all process and the system is solved in parallel with PETSc over MPI.
+
+This is effectively a Multiple Program Multiple Data execution model. 
+Examples are available in Schemes/Stokes.
+MPI is enable by setting "WITH_PETSC_MPI" in CMakeList.txt. It will most likely requires to hint the correct installation path of PETSc.
+
 # HArDCore3D
 HArD::Core3D (Hybrid Arbitrary Degree::Core 3D) - Library to implement schemes with face and cell polynomial unknowns on 3D generic meshes.
 

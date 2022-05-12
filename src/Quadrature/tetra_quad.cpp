@@ -147,17 +147,17 @@ size_t tetra_unit_size(size_t rule) {
 
 void tetra_unit_set(size_t rule,
                     size_t nq, double cq0[], double cq1[], double cq2[], double wq[]) {
-  double a;
-  double b;
-  double c;
-  double d;
-  double e;
-  double f;
-  double g;
-  double h;
-  double p;
-  double q;
-  double z;
+  double a = std::numeric_limits<double>::quiet_NaN(); // Avoid maybe-uninitialized 
+  double b = std::numeric_limits<double>::quiet_NaN();
+  double c = std::numeric_limits<double>::quiet_NaN();
+  double d = std::numeric_limits<double>::quiet_NaN();
+  double e = std::numeric_limits<double>::quiet_NaN();
+  double f = std::numeric_limits<double>::quiet_NaN();
+  double g = std::numeric_limits<double>::quiet_NaN();
+  double h = std::numeric_limits<double>::quiet_NaN();
+  double p = std::numeric_limits<double>::quiet_NaN();
+  double q = std::numeric_limits<double>::quiet_NaN();
+  double z = std::numeric_limits<double>::quiet_NaN();
   int ctr;
   switch (rule) {
     case 0 : //  Newton Cotes #0
