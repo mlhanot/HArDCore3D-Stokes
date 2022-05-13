@@ -1,6 +1,6 @@
 # HArDCore3D-Stokes
 
-Fork of HArDCore3D adding support for the Stokes complex (xxxx). See the original description below.
+Fork of HArDCore3D adding support for the Stokes complex (https://arxiv.org/abs/2112.03125). See the original description below.
 
 This fork also introduce the option to save assembled operators in a file for later use and a rudimentary interface to PETSc. 
 The HArDCore library make heavy use of threads parallelism, hence the transition toward the MPI paradigm used in PETSc is far from trivial.
