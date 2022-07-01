@@ -601,10 +601,10 @@ Eigen::MatrixXd XGradStokes::computeL2Product(
   for (size_t iV = 0; iV < T.n_vertices(); iV++) {
     const Vertex & V = *T.vertex(iV);
 
-    // weight and scaling hV^4
-    double w_hT4 = weight.value(T,V.coords()) * std::pow(T.diam(), 4);
+    // weight and scaling hV^5
+    double w_hT5 = weight.value(T,V.coords()) * std::pow(T.diam(), 5);
 
-    L2P.block(4*iV,4*iV,3,3) = w_hT4*Eigen::MatrixXd::Identity(3,3);
+    L2P.block(4*iV,4*iV,3,3) = w_hT5*Eigen::MatrixXd::Identity(3,3);
   } // iV
 
   // We need the potential in the cell
@@ -640,12 +640,12 @@ Eigen::MatrixXd XGradStokes::computeL2Product(
                    + Potential_E.transpose() * compute_gram_matrix(basis_Pkpo_E_quad, quad_2kpo_E) * Potential_E );
   
     // Penalty for the potential terms G_{q,E}
-    double w_hT3 = max_weight_quad_E * std::pow(T.diam(), 3);
+    double w_hT4 = max_weight_quad_E * std::pow(T.diam(), 4);
     auto basis_Pk_E_quad = evaluate_quad<Function>::compute(*edgeBases(E.global_index()).Polyk, quad_2kpo_E);
 
     size_t offset_E = localOffset(T,E) + PolynomialSpaceDimension<Edge>::Poly(degree()-1);
     size_t dimPk = PolynomialSpaceDimension<Edge>::Poly(degree());
-    Eigen::MatrixXd wgram_PkE = w_hT3 * compute_gram_matrix(basis_Pk_E_quad,quad_2kpo_E);
+    Eigen::MatrixXd wgram_PkE = w_hT4 * compute_gram_matrix(basis_Pk_E_quad,quad_2kpo_E);
     L2P.block(offset_E,offset_E,dimPk,dimPk) += wgram_PkE;
     offset_E += PolynomialSpaceDimension<Edge>::Poly(degree());
     L2P.block(offset_E,offset_E,dimPk,dimPk) += wgram_PkE;
@@ -682,11 +682,11 @@ Eigen::MatrixXd XGradStokes::computeL2Product(
 
     // Penalty for the potential terms G_{q,F}
     if (degree() > 0) {
-      double w_hT2 = max_weight_quad_F * std::pow(T.diam(), 2);
+      double w_hT3 = max_weight_quad_F * std::pow(T.diam(), 3);
       size_t offset_F = localOffset(T,F) + PolynomialSpaceDimension<Face>::Poly(degree()-1);
       size_t dimPkmo = PolynomialSpaceDimension<Face>::Poly(degree()-1);
       L2P.block(offset_F,offset_F,dimPkmo,dimPkmo) 
-        += w_hT2 * GramMatrix(F, *faceBases(F).Polykmo, int_monoF_2kp2);
+        += w_hT3 * GramMatrix(F, *faceBases(F).Polykmo, int_monoF_2kp2);
     } // degree > 0
 
     // Following commented block does the same as above, but without DecomposePoly (which sometimes increases errors)

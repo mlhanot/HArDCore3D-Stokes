@@ -814,7 +814,8 @@ Eigen::MatrixXd XCurlStokes::computeL2Product_with_Ops(
 
 Eigen::MatrixXd XCurlStokes::computeL2opnVertex(double h) const {
   Eigen::DiagonalMatrix<double, 6> rv;
-  rv.diagonal() << h,h,h,1.,1.,1.;
+  double h2 = h*h;
+  rv.diagonal() << h2,h2,h2,1.,1.,1.;
   return rv;
 }
 
@@ -835,7 +836,7 @@ Eigen::MatrixXd XCurlStokes::computeL2opnEdge(size_t iE) const {
     offset_E += dimPk;
   }
   for (size_t i = 0; i < 3; i++) {
-    L2P.block(offset_E,offset_E,dimPkpo,dimPkpo) = E.diam()*gram_Pkpo_E;
+    L2P.block(offset_E,offset_E,dimPkpo,dimPkpo) = E.diam()*E.diam()*gram_Pkpo_E;
     offset_E += dimPkpo;
   }
   return L2P;
@@ -847,8 +848,8 @@ Eigen::MatrixXd XCurlStokes::computeL2opnuEdge(size_t iE) const {
   // Vertices
   L2P.block(3,3,3,3) = E.diam()*Eigen::MatrixXd::Identity(3,3);
   L2P.block(9,9,3,3) = E.diam()*Eigen::MatrixXd::Identity(3,3);
-  L2P.block(0,0,3,3) = E.diam()*E.diam()*Eigen::MatrixXd::Identity(3,3);
-  L2P.block(6,6,3,3) = E.diam()*E.diam()*Eigen::MatrixXd::Identity(3,3);
+  L2P.block(0,0,3,3) = E.diam()*E.diam()*E.diam()*Eigen::MatrixXd::Identity(3,3);
+  L2P.block(6,6,3,3) = E.diam()*E.diam()*E.diam()*Eigen::MatrixXd::Identity(3,3);
   // L2 product of each components
   QuadratureRule quad_2kp2_E = generate_quadrature_rule(E, 2 * degree()+2);
   auto basis_Pk_E_quad = evaluate_quad<Function>::compute(*edgeBases(E.global_index()).Polyk, quad_2kp2_E);
@@ -863,7 +864,7 @@ Eigen::MatrixXd XCurlStokes::computeL2opnuEdge(size_t iE) const {
     offset_E += dimPk;
   }
   for (size_t i = 0; i < 3; i++) {
-    L2P.block(offset_E,offset_E,dimPkpo,dimPkpo) = E.diam()*gram_Pkpo_E;
+    L2P.block(offset_E,offset_E,dimPkpo,dimPkpo) = E.diam()*E.diam()*gram_Pkpo_E;
     offset_E += dimPkpo;
   }
   return L2P;
@@ -904,9 +905,9 @@ Eigen::MatrixXd XCurlStokes::computeL2opnFace(size_t iF) const {
     offset += dimRck;
     L2P.block(offset,offset,dimPkmo,dimPkmo) = gram_Pkmo_F;
     offset += dimPkmo;
-    L2P.block(offset,offset,dimGk,dimGk) = gram_Gk_F;
+    L2P.block(offset,offset,dimGk,dimGk) = F.diam()*F.diam()*gram_Gk_F;
     offset += dimGk;
-    L2P.block(offset,offset,dimGck,dimGck) = gram_Gck_F;
+    L2P.block(offset,offset,dimGck,dimGck) = F.diam()*F.diam()*gram_Gck_F;
     
     return L2P;
   }
